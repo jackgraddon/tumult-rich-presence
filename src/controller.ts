@@ -7,10 +7,9 @@
  * or on another client) and is left alone. Presence itself is never changed —
  * the current value is re-sent alongside the new message.
  */
-import type { OwnPresenceState } from "@tumult/ui";
+import type { ChatClient, OwnPresenceState } from "@tumult/ui";
 
 import { ACTIVITY_KEY, type Activity, mirrorText } from "./activity.ts";
-import type { ActivityClient } from "./api.ts";
 
 export interface KeyValueStore {
     getItem(key: string): string | null;
@@ -60,11 +59,11 @@ export interface SetResult {
 }
 
 export class ActivityController {
-    private readonly client: ActivityClient;
+    private readonly client: ChatClient;
     private readonly store: KeyValueStore;
     private supported: Promise<boolean> | null = null;
 
-    constructor(client: ActivityClient, store: KeyValueStore = safeStorage()) {
+    constructor(client: ChatClient, store: KeyValueStore = safeStorage()) {
         this.client = client;
         this.store = store;
     }
@@ -143,7 +142,7 @@ export class ActivityController {
 const controllers = new WeakMap<object, ActivityController>();
 
 /** One controller per client, shared by the command and the settings tab. */
-export function controllerFor(client: ActivityClient): ActivityController {
+export function controllerFor(client: ChatClient): ActivityController {
     let c = controllers.get(client);
     if (!c) {
         c = new ActivityController(client);

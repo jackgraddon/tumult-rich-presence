@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount } from "vue";
 
 import { activityHeadline, formatElapsed, isActivity } from "../activity.ts";
-import type { ActivityVariant } from "../api.ts";
+import type { ActivityVariant } from "@tumult/ui";
 import { useNow } from "../ticker.ts";
 
 const props = defineProps<{ userId: string; value: unknown; variant: ActivityVariant }>();

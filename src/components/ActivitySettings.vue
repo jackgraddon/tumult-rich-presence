@@ -3,11 +3,10 @@ import type { ChatClient } from "@tumult/ui";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
 import { ACTIVITY_KEY, ACTIVITY_TYPES, type ActivityType, isActivity, LIMITS, makeActivity } from "../activity.ts";
-import type { ActivityClient } from "../api.ts";
 import { controllerFor } from "../controller.ts";
 
 const props = defineProps<{ client: ChatClient; close(): void }>();
-const client = props.client as unknown as ActivityClient;
+const client = props.client;
 const controller = controllerFor(client);
 
 const supported = ref<boolean | null>(null);

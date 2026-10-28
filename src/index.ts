@@ -12,7 +12,6 @@
 import type { Plugin, PluginManifest } from "@tumult/ui";
 
 import { ACTIVITY_KEY, isActivity, makeActivity, mirrorText, parseActivityArgs } from "./activity.ts";
-import { asActivityContext } from "./api.ts";
 import ActivityLine from "./components/ActivityLine.vue";
 import ActivitySettings from "./components/ActivitySettings.vue";
 import { controllerFor } from "./controller.ts";
@@ -24,8 +23,7 @@ export const manifest: PluginManifest = {
     version: "0.1.0",
     author: "jackgraddon",
     description: "Discord-style activities (Playing / Listening / Watching) on your profile, shown in member lists and the user bar.",
-    // `activity-renderers` is new in plugin API 1.2.0; the vendored types predate it.
-    permissions: ["activity-renderers", "commands", "settings-tabs", "styles"] as unknown as PluginManifest["permissions"],
+    permissions: ["activity-renderers", "commands", "settings-tabs", "styles"],
     minCore: "1.4.0",
     minUI: "1.2.0",
 };
@@ -35,9 +33,7 @@ export const USAGE = "/activity [playing|listening|watching|custom] [emoji] <nam
 export const plugin: Plugin = {
     manifest,
 
-    install(rawCtx) {
-        const ctx = asActivityContext(rawCtx);
-
+    install(ctx) {
         ctx.injectStylesheet(STYLES);
 
         ctx.addActivityRenderer({

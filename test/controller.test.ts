@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { ACTIVITY_KEY, makeActivity } from "../src/activity.ts";
-import type { ActivityClient } from "../src/api.ts";
+import type { ChatClient } from "@tumult/ui";
 import { ActivityController, type KeyValueStore } from "../src/controller.ts";
 
 function feed<T>(value: T) {
@@ -24,7 +24,7 @@ function fakeClient(opts: { supported: boolean; status?: string | null; presence
             calls.presence.push([p, s]);
             own.set({ presence: p, statusMessage: s || null });
         },
-    } as unknown as ActivityClient;
+    } as unknown as ChatClient;
     return { client, calls };
 }
 

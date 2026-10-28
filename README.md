@@ -50,9 +50,8 @@ pnpm typecheck
 pnpm build       # dist/plugin.js
 ```
 
-`src/api.ts` declares the profile-field and activity-renderer API locally.
-At the time of writing, the vendored `types/plugin.d.ts` predates it. Delete
-that file once the regenerated types include it.
+`types/plugin.d.ts` is vendored from Tumult (`templates/plugin/types/`) and
+must describe contract 1.4.0 / plugin API 1.2.0 or newer.
 
 ## Releasing
 
