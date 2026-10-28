@@ -1,44 +1,77 @@
 /**
- * Shrug — the template plugin.
+ * Rich Presence — Discord-style activities for Tumult.
  *
- * Replace this file with your own. It stays small on purpose: one command, one
- * stylesheet, no Vue import. A logic-only plugin like this one runs in the
- * **sandbox lane** (Tumult derives that from the permissions below — you never
- * declare it), which means it cannot touch the DOM even if it wanted to.
+ * Producer: a settings tab and `/activity` write an `app.tumult.activity`
+ * document to the user's MSC4133 extended profile, and (optionally, on by
+ * default) mirror "Playing Chess" into `status_msg` so every Matrix client sees
+ * something. Consumer: an activity renderer replaces the status line in member
+ * rows and the user bar for anyone whose profile carries a valid document.
  *
- * The manifest in `tumult.plugin.json` at the repository root is the same
- * manifest declared here; keep the two in step (the release workflow copies
- * this one into the release asset).
+ * Uses component permissions, so it runs in the trusted (in-page) lane.
  */
 import type { Plugin, PluginManifest } from "@tumult/ui";
 
-const manifest: PluginManifest = {
-    id: "cc.example.shrug",
-    name: "Shrug",
-    version: "1.0.0",
-    author: "You",
-    description: "Append ¯\\_(ツ)_/¯ to a message with /shrug.",
-    permissions: ["commands", "styles"],
-    // Leave this out until you have published a release with it: Tumult
-    // refuses to install a plugin that asks for a newer API than it provides.
-    // minUI: "1.0.0",
+import { ACTIVITY_KEY, isActivity, makeActivity, mirrorText, parseActivityArgs } from "./activity.ts";
+import { asActivityContext } from "./api.ts";
+import ActivityLine from "./components/ActivityLine.vue";
+import ActivitySettings from "./components/ActivitySettings.vue";
+import { controllerFor } from "./controller.ts";
+import { STYLES } from "./styles.ts";
+
+export const manifest: PluginManifest = {
+    id: "app.tumult.rich-presence",
+    name: "Rich Presence",
+    version: "0.1.0",
+    author: "jackgraddon",
+    description: "Discord-style activities (Playing / Listening / Watching) on your profile, shown in member lists and the user bar.",
+    // `activity-renderers` is new in plugin API 1.2.0; the vendored types predate it.
+    permissions: ["activity-renderers", "commands", "settings-tabs", "styles"] as unknown as PluginManifest["permissions"],
+    minCore: "1.4.0",
+    minUI: "1.2.0",
 };
+
+export const USAGE = "/activity [playing|listening|watching|custom] [emoji] <name> [| details]  ·  /activity clear";
 
 export const plugin: Plugin = {
     manifest,
 
-    install(ctx) {
-        ctx.injectStylesheet(`
-            .cc-example-shrug-message { font-family: var(--font-family-monospace, monospace); }
-        `);
+    install(rawCtx) {
+        const ctx = asActivityContext(rawCtx);
+
+        ctx.injectStylesheet(STYLES);
+
+        ctx.addActivityRenderer({
+            id: "app.tumult.rich-presence.activity",
+            key: ACTIVITY_KEY,
+            component: ActivityLine,
+            match: isActivity,
+        });
+
+        ctx.addSettingsTab({
+            id: "app.tumult.rich-presence.settings",
+            title: "Activity",
+            component: ActivitySettings,
+        });
 
         ctx.addCommand({
-            name: "shrug",
-            description: "Append ¯\\_(ツ)_/¯ to your message",
-            usage: "<text>",
-            run: ({ args, roomId, client }) => {
-                const body = args ? `${args} ¯\\_(ツ)_/¯` : "¯\\_(ツ)_/¯";
-                return client.send(roomId, body);
+            name: "activity",
+            description: "Set or clear your activity (Playing / Listening / Watching)",
+            usage: "[type] <name> | clear",
+            run: async ({ args }) => {
+                const parsed = parseActivityArgs(args);
+                if (parsed === null) throw new Error(`Usage: ${USAGE}`);
+                const controller = controllerFor(ctx.client);
+                if (parsed.clear) {
+                    await controller.clearActivity();
+                    return;
+                }
+                const doc = makeActivity(parsed.input);
+                const result = await controller.setActivity(doc);
+                if (!result.profile && result.skippedManual) {
+                    throw new Error(
+                        `Extended profiles are unsupported here and your custom status was left alone, so "${mirrorText(doc)}" was not published.`,
+                    );
+                }
             },
         });
     },

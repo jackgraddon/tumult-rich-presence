@@ -1,14 +1,15 @@
 {
-    "name": "tumult-plugin-template",
+    "name": "tumult-rich-presence",
     "private": true,
-    "version": "1.0.0",
+    "version": "0.1.0",
     "type": "module",
-    "description": "Template for a Tumult plugin: a manifest, a bundle, and a release workflow.",
+    "description": "Tumult plugin: Discord-style rich presence over MSC4133 extended profiles.",
     "scripts": {
         "build": "vite build",
         "typecheck": "vue-tsc -p tsconfig.json --noEmit",
         "shim": "node scripts/gen-vue-shim.mjs",
-        "release:dry": "pnpm build && node scripts/make-release-manifest.mjs"
+        "release:dry": "pnpm build && node scripts/make-release-manifest.mjs",
+        "test": "node --test \"test/**/*.test.ts\""
     },
     "devDependencies": {
         "@vitejs/plugin-vue": "^6.0.9",

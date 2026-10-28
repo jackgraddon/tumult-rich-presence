@@ -1,10 +1,12 @@
 {
     "$schema": "./tumult.plugin.schema.json",
-    "id": "cc.example.shrug",
-    "name": "Shrug",
-    "version": "1.0.0",
-    "author": "You",
-    "description": "Append ¯\\_(ツ)_/¯ to a message with /shrug.",
-    "permissions": ["commands", "styles"],
+    "id": "app.tumult.rich-presence",
+    "name": "Rich Presence",
+    "version": "0.1.0",
+    "author": "jackgraddon",
+    "description": "Discord-style activities (Playing / Listening / Watching) on your profile, shown in member lists and the user bar.",
+    "permissions": ["activity-renderers", "commands", "settings-tabs", "styles"],
+    "minCore": "1.4.0",
+    "minUI": "1.2.0",
     "entry": "plugin.js"
 }

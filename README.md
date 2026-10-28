@@ -1,137 +1,63 @@
-# Tumult plugin template
+# Tumult Rich Presence
 
-A starting point for a [Tumult](https://github.com/jackgraddon/tumult) plugin:
-a manifest, one source file, a bundle step, and a release workflow that
-publishes what Tumult installs.
+Discord-style activities ("Playing Chess", "Listening to Lo-fi") for
+[Tumult](https://github.com/jackgraddon/tumult), shipped as a plugin. Vanilla
+Tumult only does what the Matrix spec does, so this lives outside it.
 
-## Use it
+## How it works
 
-1. **Create your repository.** "Use this template" on GitHub, or copy the
-   directory. Your repository URL is what people paste into Tumult.
-2. **Edit `src/index.ts` and `tumult.plugin.json`.** Keep the two manifests in
-   step: `tumult.plugin.json` is what Tumult reads, `src/index.ts` is what your
-   code carries (Tumult checks they agree before running anything).
-3. **Install and build.**
+- **Storage:** your activity is a versioned JSON document in your
+  [MSC4133](https://github.com/matrix-org/matrix-spec-proposals/pull/4133)
+  extended profile, under the key `app.tumult.activity`:
 
-   ```sh
-   pnpm install
-   pnpm build          # writes dist/plugin.js
-   pnpm typecheck      # your code against the vendored plugin types
-   ```
+  ```json
+  { "v": 1, "type": "playing", "name": "Chess", "details": "Ranked", "state": "Move 12",
+    "startedAt": 1761660000000, "emoji": "♟️" }
+  ```
 
-4. **Tag a release.** Push a tag matching the manifest `version`:
+  `type` is `playing` | `listening` | `watching` | `custom`. `name` is required
+  (1–128 chars), and the other fields are optional. Readers accept only versions
+  they understand (`isActivity` in `src/activity.ts`). A document that fails
+  validation is not rendered, and the normal status line shows instead.
+- **Producing it:** the **Activity** settings tab, or the `/activity` command:
 
-   ```sh
-   git tag v1.0.0 && git push origin v1.0.0
-   ```
+  ```
+  /activity playing Chess
+  /activity listening 🎧 Lo-fi | Some Artist      (| separates details)
+  /activity custom Out to lunch
+  /activity clear
+  ```
 
-   The workflow builds, hashes and attaches `plugin.js` and
-   `tumult.plugin.json`. (Enable Actions in **Settings → Actions** on a fresh
-   repository; template repositories ship with workflows disabled.)
-5. **Install it in Tumult.** Settings → Plugins → paste your repository URL.
-   Tumult finds the release manifest, shows you the consent screen, and
-   verifies the hash before anything runs. The deployment fetches your release
-   *assets* (the manifest and the bundle) through its own origin, because GitHub
-   does not send CORS headers on release-asset downloads — a browser cannot read
-   them cross-origin. (The release *JSON* is CORS-open and is read directly.)
+- **Status mirror** (on by default): the plugin also writes the headline
+  ("Playing Chess") to your Matrix `status_msg` and leaves your presence as it
+  is, so people on other clients see it too. It only overwrites a status that is
+  empty or that it wrote itself. If you typed your own status, the plugin
+  leaves it in place. If your homeserver lacks extended profiles, the mirror is
+  the only output, and the settings tab says so.
+- **Rendering:** an activity renderer replaces the status line in member rows
+  (always one line, truncated, with the elapsed time) and in your user bar.
 
-## What lives where
+Requires Tumult contract ≥ 1.4.0 and plugin API ≥ 1.2.0 (`minCore` / `minUI`).
+Permissions: `activity-renderers`, `settings-tabs`, `commands`, `styles`. The
+component permissions mean it runs in the trusted, in-page lane.
 
-| path | what it is |
-|---|---|
-| `tumult.plugin.json` | the release manifest — id, permissions, `entry`, and (once released) `integrity`. Validated against `tumult.plugin.schema.json`. |
-| `src/index.ts` | your plugin: a manifest and `install(ctx)`. The template's example is a `/shrug` command. |
-| `src/shims/vue.ts` | the `vue` your bundle builds against — **generated** by `scripts/gen-vue-shim.mjs`. See below. |
-| `types/plugin.d.ts` | the whole plugin API, vendored so you need no Tumult packages installed. **Generated** in the Tumult repo — do not edit it here. |
-| `vite.config.ts` | the bundle step (Vite + `@vitejs/plugin-vue`). |
-| `scripts/gen-vue-shim.mjs` | regenerates `src/shims/vue.ts` from the installed `vue` package (`pnpm shim`). |
-| `scripts/make-release-manifest.mjs` | computes `integrity` for the built bundle. |
-| `.github/workflows/release.yml` | tag → build → hash → release. |
+## Develop
 
-## How a plugin talks to Tumult
-
-Your bundle exports a `Plugin`: a manifest plus `install(ctx)`. Everything
-else goes through `ctx` — the chat client, the room selection, media
-resolution, and the seven extension points (timeline renderers, composer
-actions, slash commands, member decorations, settings tabs, stylesheets,
-workspace panes), each
-gated by a **permission** you declare:
-
-```ts
-import type { Plugin } from "@tumult/ui";
-
-export const plugin: Plugin = {
-    manifest: {
-        id: "cc.example.shrug",
-        name: "Shrug",
-        version: "1.0.0",
-        permissions: ["commands"],
-    },
-    install(ctx) {
-        ctx.addCommand({
-            name: "shrug",
-            description: "Append ¯\\_(ツ)_/¯ to your message",
-            run: ({ args, roomId, client }) =>
-                client.send(roomId, args ? `${args} ¯\\_(ツ)_/¯` : "¯\\_(ツ)_/¯"),
-        });
-    },
-};
+```sh
+pnpm install
+pnpm test        # node --test "test/**/*.test.ts"
+pnpm typecheck
+pnpm build       # dist/plugin.js
 ```
 
-Declare every permission you use. An undeclared one is not a warning: the call
-throws and the install is rolled back. An unknown one refuses the install
-outright, because Tumult can only ask the user to consent to capabilities it
-can name.
+`src/api.ts` declares the profile-field and activity-renderer API locally.
+At the time of writing, the vendored `types/plugin.d.ts` predates it. Delete
+that file once the regenerated types include it.
 
-### Lanes: sandboxed vs in-page
+## Releasing
 
-Tumult **derives** your lane from your permissions — you never declare it, and
-neither does a reviewer:
-
-| permission | lane |
-|---|---|
-| `commands`, `composer-actions`, `styles` | **sandbox** — your code runs inside a Worker and reaches Tumult only through the message bridge. No DOM, no `window`. |
-| `timeline-renderers`, `member-decorations`, `settings-tabs`, `workspace-panes` | **trusted** — your code runs in the page, at Tumult's own trust level. Tumult warns the user clearly before installing. |
-
-Stay in the sandbox if you can. A plugin that only sends messages, reacts,
-transforms text or ships stylesheets can do a lot without ever needing the DOM.
-
-### Vue components
-
-A component permission (`timeline-renderers`, `member-decorations`,
-`settings-tabs`, `workspace-panes`) means you contribute a Vue component, which
-puts you in the trusted lane. Import `vue` normally for its types, and build
-through `vite.config.ts` with `@vitejs/plugin-vue` — Vite compiles your SFCs and
-aliases `vue` to `src/shims/vue.ts`. That shim forwards to the host's Vue
-instance, because a second copy of Vue in your bundle would render but could
-not `inject()` anything from Tumult.
-
-`vue` is a **devDependency** here on purpose: it is for types only. Do not
-bundle a copy. The shim is generated (`pnpm shim`) from the installed `vue`
-package, so a compiled SFC always finds the helpers it needs. Styles in SFC
-`<style>` blocks are extracted to a sibling file that the release does not
-attach — keep CSS in a TypeScript string and inject it with
-`ctx.injectStylesheet()`.
-
-### Compatibility
-
-`minUI` (the plugin API) and `minCore` (the chat-client contract) are enforced:
-Tumult refuses to install a plugin asking for a newer version than it
-provides. Omit them until you actually need them. The versions these vendored
-types describe are both `1.1.0` (`minUI` and `minCore`).
-
-## Versioning and updates
-
-Re-installing is the update path, and it always goes through the consent
-screen — so if a new version asks for permissions the user never agreed to,
-they are asked again. Bump `version` in both manifests and push a new tag.
-
-Your users' trust is bound to a hash, not to your repository name: Tumult
-verifies the bundle against the `integrity` in the release manifest, and
-re-verifies the stored copy on every start. Move a tag or replace a release
-asset and the installs that already exist keep working; new installs get what
-the new release says.
-
-## License
-
-Do whatever you want with this template. Your plugin is yours.
+**Make this repository public before releasing.** Tumult's installer fetches
+releases without authentication, so it cannot see a private repo. After that,
+follow the template flow: bump `version` in `package.json`, `tumult.plugin.json`
+and `src/index.ts`, then push a matching `vX.Y.Z` tag. Actions must be enabled
+in the repo settings.
