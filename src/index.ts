@@ -20,7 +20,7 @@ import { STYLES } from "./styles.ts";
 export const manifest: PluginManifest = {
     id: "app.tumult.rich-presence",
     name: "Rich Presence",
-    version: "0.1.0",
+    version: "0.1.1",
     author: "jackgraddon",
     description: "Discord-style activities (Playing / Listening / Watching) on your profile, shown in member lists and the user bar.",
     permissions: ["activity-renderers", "commands", "settings-tabs", "styles"],
