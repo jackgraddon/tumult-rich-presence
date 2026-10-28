@@ -1,0 +1,20 @@
+{
+    "name": "tumult-plugin-template",
+    "private": true,
+    "version": "1.0.0",
+    "type": "module",
+    "description": "Template for a Tumult plugin: a manifest, a bundle, and a release workflow.",
+    "scripts": {
+        "build": "vite build",
+        "typecheck": "vue-tsc -p tsconfig.json --noEmit",
+        "shim": "node scripts/gen-vue-shim.mjs",
+        "release:dry": "pnpm build && node scripts/make-release-manifest.mjs"
+    },
+    "devDependencies": {
+        "@vitejs/plugin-vue": "^6.0.9",
+        "typescript": "^5.9.3",
+        "vite": "^7.3.6",
+        "vue": "^3.5.22",
+        "vue-tsc": "^3.1.1"
+    }
+}
