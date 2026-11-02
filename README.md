@@ -36,10 +36,23 @@ Tumult only does what the Matrix spec does, so this lives outside it.
   the only output, and the settings tab says so.
 - **Rendering:** an activity renderer replaces the status line in member rows
   (always one line, truncated, with the elapsed time) and in your user bar.
+- **Native / RPC mirror** (desktop only): a native app — a game, a music
+  player, an editor — can push its own activity into Tumult over the
+  `native-activity` feed, and this mirrors it into the very same
+  `app.tumult.activity` field, so "what a person is doing" shows identically on
+  desktop and web. A native push supersedes whatever the field holds
+  (last-writer-wins), and going idle clears the field — but only the document the
+  mirror itself last wrote, so a `/activity` you typed afterwards is left in
+  place. A web tab cannot see an operating system, so the feed stays empty and
+  this does nothing in a browser; the **Activity** settings tab shows the live
+  native activity when one is running. The feed is the one declared native
+  bridge (the shell's `window.tumultNative`, a desktop preload), which is why
+  the mirror needs the `native-activity` permission and the trusted lane.
 
-Requires Tumult contract ≥ 1.4.0 and plugin API ≥ 1.2.0 (`minCore` / `minUI`).
-Permissions: `activity-renderers`, `settings-tabs`, `commands`, `styles`. The
-component permissions mean it runs in the trusted, in-page lane.
+Requires Tumult contract ≥ 1.5.0 and plugin API ≥ 1.3.0 (`minCore` / `minUI`).
+Permissions: `activity-renderers`, `settings-tabs`, `commands`, `styles`,
+`native-activity`. The component permissions mean it runs in the trusted,
+in-page lane.
 
 ## Develop
 
@@ -51,7 +64,7 @@ pnpm build       # dist/plugin.js
 ```
 
 `types/plugin.d.ts` is vendored from Tumult (`templates/plugin/types/`) and
-must describe contract 1.4.0 / plugin API 1.2.0 or newer.
+must describe contract 1.5.0 / plugin API 1.3.0 or newer.
 
 ## Releasing
 

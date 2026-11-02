@@ -33,7 +33,7 @@ import { Component, ComputedRef, InjectionKey, Ref } from 'vue';
  * against this at install (see `@tumult/ui`'s `checkManifestCompatibility`),
  * so it must stay a value module: nothing in it may import the SDK.
  */
-export declare const CONTRACT_VERSION = "1.4.0";
+export declare const CONTRACT_VERSION = "1.5.0";
 /** Cancels a subscription created by {@link Subscribable.subscribe}. */
 export interface Subscription {
 	unsubscribe(): void;
@@ -199,6 +199,12 @@ export interface RoomSettingsPatch {
 	historyVisibility?: HistoryVisibility;
 	/** Full `#alias:server` form; `null` (or empty after trim) removes it. */
 	canonicalAlias?: string | null;
+	/**
+	 * Whether members (not only admins) may join the room's calls — the power
+	 * level of {@link CALL_MEMBER_EVENT_TYPE}. A room power-levels write, so it
+	 * needs `canSetPowerLevel`. Read it back with {@link membersCanJoinCalls}.
+	 */
+	membersCanJoinCalls?: boolean;
 }
 export interface RoomSummary {
 	id: string;
@@ -268,8 +274,15 @@ export interface SessionView {
  * running; `backupTrusted` means this device holds the backup decryption key.
  * A fresh device typically reads `{ enabled: true, trusted: false }` — the
  * recovery-key prompt state.
+ *
+ * `checked` is false until this device's crypto has actually answered (it
+ * starts after the first sync), and every other field is then a placeholder.
+ * Act on nothing before it: read as "no backup", the placeholder used to show
+ * every user "Message backup is off — set up recovery" on every boot, and the
+ * button failed because encryption was not running yet.
  */
 export interface SecurityStatus {
+	checked: boolean;
 	crossSigningReady: boolean;
 	backupEnabled: boolean;
 	backupTrusted: boolean;
@@ -295,7 +308,7 @@ interface VerificationRequestView {
 interface VerificationState {
 	requests: VerificationRequestView[];
 }
-type CallState = "connecting" | "joined" | "error";
+type CallState = "connecting" | "joined" | "ended" | "error";
 interface CallView {
 	roomId: string;
 	url: string;
@@ -312,7 +325,26 @@ interface VoiceParticipant {
 	speaking: boolean;
 	/** Whether they have muted their own microphone. */
 	muted: boolean;
+	/** Whether a camera track is live and can be attached to a `<video>`. */
+	camera: boolean;
+	/** Whether a screen-share track is live and can be attached to a `<video>`. */
+	screen: boolean;
+	/**
+	 * Whether their screen share carries audio. Browser support for capturing it
+	 * is partial (none on Safari; on Chromium, a tab with "share audio" ticked),
+	 * so a silent share is normal and must be shown, not guessed at.
+	 */
+	screenAudio: boolean;
 }
+interface VoiceSettings {
+	/** Remove the sound of the other side coming out of our speakers. Wanted without headphones. */
+	echoCancellation: boolean;
+	/** Suppress steady background noise. Colours the voice, so off for a clean microphone. */
+	noiseSuppression: boolean;
+	/** Even out loudness automatically. Off to keep your own dynamics. */
+	autoGainControl: boolean;
+}
+type VoiceVideoSource = "camera" | "screen";
 interface VoiceView {
 	roomId: string;
 	state: VoiceState;
@@ -322,6 +354,10 @@ interface VoiceView {
 	muted: boolean;
 	/** Remote audio is silenced locally (we still publish unless also muted). */
 	deafened: boolean;
+	/** Our camera is publishing. */
+	camera: boolean;
+	/** We are sharing a screen. */
+	screen: boolean;
 	/** Everyone in the session, us included, in join order. */
 	participants: VoiceParticipant[];
 }
@@ -366,12 +402,15 @@ export type Membership = "join" | "invite" | "leave" | "ban" | "knock";
  * from the store's cache is deliberately not trusted (it can be days old and
  * still say `"online"`), so a member stays `"unknown"` until the server tells
  * us otherwise. Never invent `"online"`.
+ *
+ * `"unavailable"` is Matrix's "away" (idle, or set by the user) — kept
+ * distinct from `"offline"` so a member row and the user bar agree on it.
+ * Our own row reads the same snapshot as {@link ChatClient.ownPresence}.
  */
-export type PresenceState = "online" | "offline" | "unknown";
+export type PresenceState = "online" | "unavailable" | "offline" | "unknown";
 /**
- * Presence we may set for our own user. The write enum differs from the read
- * side: `"unavailable"` is settable (not present on read members) and `"unknown"`
- * exists only for unread members, never as a self-written state.
+ * Presence we may set for our own user. `"unknown"` exists only on the read
+ * side (a member we have no live presence for), never as a self-written state.
  */
 export type OwnPresenceState = "online" | "offline" | "unavailable";
 /** Our own presence as the UI needs it (for the user bar and status editor). */
@@ -379,6 +418,7 @@ export interface OwnPresenceView {
 	presence: OwnPresenceState;
 	statusMessage: string | null;
 }
+type MemberVerification = "verified" | "unverified" | "unknown";
 /** One member of a room, as the members pane needs it. */
 export interface MemberView {
 	userId: string;
@@ -392,6 +432,8 @@ export interface MemberView {
 	powerLevel: number;
 	isSelf: boolean;
 	presence: PresenceState;
+	/** Whether we have cryptographically verified this user's identity. */
+	verification: MemberVerification;
 	/**
 	 * Approximate last-activity time (ms since epoch) derived from live
 	 * presence, `null` when presence is unknown. A moment ago for `online`.
@@ -475,6 +517,28 @@ export interface EncryptedAttachment {
 	/** Version string (currently `"v2"`). */
 	v: string;
 }
+interface OutgoingAttachment {
+	file: File | Blob;
+	/** Filename on the event; defaults to `File.name`, else `"file"`. */
+	name?: string;
+	/** Description for screen readers; images only in the UI. */
+	altText?: string;
+	/** Intrinsic pixel size (images/video), so receivers reserve the box. */
+	width?: number;
+	height?: number;
+}
+interface SendAttachmentsOptions {
+	/** Message text sent with the files; blank means none. */
+	caption?: string;
+	/** Reply target; the relation goes on the first event sent. */
+	replyToEventId?: string;
+}
+type AttachmentSendResult = {
+	ok: true;
+} | {
+	ok: false;
+	error: unknown;
+};
 export interface ChatClient {
 	/**
 	 * Begin MAS login.
@@ -525,6 +589,10 @@ export interface ChatClient {
 	/**
 	 * Our own presence + status message, published once `start()` reads it and
 	 * refreshed after `setOwnPresence()`. `null` before there is a session.
+	 * The single source for our own dot: the user bar AND our member row.
+	 * The presence last chosen through `setOwnPresence()` (default `online`)
+	 * is re-asserted on start and on a heartbeat, because sliding sync never
+	 * reports us online to the server on its own.
 	 */
 	ownPresence: Subscribable<OwnPresenceView | null>;
 	/**
@@ -564,6 +632,23 @@ export interface ChatClient {
 	 * — when omitted, the filename is used.
 	 */
 	sendMediaMessage(roomId: string, file: File | Blob, body?: string): Promise<void>;
+	/**
+	 * Upload and send staged attachments in order, with an optional caption.
+	 *
+	 * One file carries the caption on its own event (MSC2530: `filename` +
+	 * a differing `body`); several files get the caption as a text message
+	 * sent first. Alt text rides under {@link ALT_TEXT_KEY}. Never rejects for
+	 * a single file: each result says whether that file landed, because a
+	 * failed upload has no local echo to show the failure.
+	 */
+	sendAttachments(roomId: string, attachments: readonly OutgoingAttachment[], options?: SendAttachmentsOptions): Promise<AttachmentSendResult[]>;
+	/**
+	 * The homeserver's maximum upload size in bytes (`m.upload.size`), or
+	 * `null` when it advertises none or the read failed. Read once per
+	 * session. A proxy in front of the homeserver may enforce a LOWER limit
+	 * the client cannot see, so a file under this can still be refused.
+	 */
+	uploadLimit(): Promise<number | null>;
 	/**
 	 * Toggle our `emoji` reaction on a message: sends `m.reaction` when we
 	 * haven't reacted, redacts our reaction when we have. The feed maps the
@@ -621,12 +706,34 @@ export interface ChatClient {
 	 * room is using, and rejects (`voice` in `error`) when there is none.
 	 */
 	supportsVoice(): boolean;
-	/** Join the room's voice session, leaving any voice session or call already open. */
-	joinVoice(roomId: string): Promise<void>;
+	/**
+	 * Join the room's voice session, leaving any voice session or call already
+	 * open. `video: true` starts with the camera on; a camera that cannot start
+	 * (permission denied) does not fail the join, it just stays off.
+	 */
+	joinVoice(roomId: string, options?: {
+		video?: boolean;
+	}): Promise<void>;
 	/** Leave the voice session. A no-op when not in one. */
 	leaveVoice(): Promise<void>;
 	/** Mute or unmute our microphone. A no-op when not in a session. */
 	setVoiceMuted(muted: boolean): Promise<void>;
+	/** Turn our camera on or off. Rejects if the camera cannot start. A no-op when not in a session. */
+	setVoiceCamera(enabled: boolean): Promise<void>;
+	/** Start or stop sharing a screen (the browser asks which). Rejects if refused. A no-op when not in a session. */
+	setVoiceScreenShare(enabled: boolean): Promise<void>;
+	/**
+	 * Render one participant's video track into `element`. The element is the
+	 * only DOM type crossing the contract (like {@link ChatClient.attachCall}'s
+	 * frame): pixels never pass through our code. Call it again when the
+	 * participant's `camera`/`screen` flag flips on; the returned function
+	 * detaches (safe to call twice). A no-op detach when there is no such track.
+	 */
+	attachVoiceVideo(userId: string, deviceId: string, source: VoiceVideoSource, element: HTMLVideoElement): () => void;
+	/** How our microphone is processed. Persisted on this device, and available before a call starts. */
+	voiceSettings: Subscribable<VoiceSettings>;
+	/** Change microphone processing (any subset). Persists, and re-opens the microphone if a call is live. */
+	setVoiceSettings(settings: Partial<VoiceSettings>): Promise<void>;
 	/** Silence or restore remote audio locally. A no-op when not in a session. */
 	setVoiceDeafened(deafened: boolean): void;
 	/** Local playback volume for one participant, 0 (silent) to 1. Not sent to anyone. */
@@ -1150,6 +1257,17 @@ export interface SettingsTabProps {
 	/** Close the settings dialog (e.g. from a finished action). */
 	close(): void;
 }
+declare const SETTINGS_SECTIONS: readonly [
+	"account",
+	"app",
+	"plugins"
+];
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+interface SettingsGroup {
+	section: SettingsSection;
+	title: string;
+	tabs: SettingsTab[];
+}
 /**
  * One tab in the settings dialog. The shell contributes its own tabs (the
  * plugin list) and plugins add theirs; everything else is a normal Vue
@@ -1159,10 +1277,12 @@ export interface SettingsTabProps {
 export interface SettingsTab {
 	/** Stable, namespaced id — the registry keys by it. */
 	id: string;
-	/** Label in the tab strip. */
+	/** Label in the sidebar. */
 	title: string;
 	component: Component;
-	/** Higher sorts earlier (built-in tabs at 0, plugins default after). */
+	/** Sidebar group. Default `"plugins"`. */
+	section?: SettingsSection;
+	/** Higher sorts earlier within its section. Default 0. */
 	priority?: number;
 }
 /**
@@ -1175,6 +1295,14 @@ export declare class SettingsTabsRegistry {
 	remove(id: string): boolean;
 	/** Highest priority first. */
 	all(): SettingsTab[];
+	/** The tab registered under `id`, or undefined. */
+	get(id: string): SettingsTab | undefined;
+	/**
+	 * The sidebar: one group per section that has tabs, in `SETTINGS_SECTIONS`
+	 * order, each in priority order. An empty section is dropped, so a host
+	 * with no theme controls shows no empty "App settings" heading.
+	 */
+	grouped(): SettingsGroup[];
 }
 export declare const SettingsTabsKey: InjectionKey<SettingsTabsRegistry>;
 export declare function useSettingsTabs(): SettingsTabsRegistry;
@@ -1292,9 +1420,13 @@ type Disposable$1 = () => void;
  * `PluginContext` names the permission it requires; the registry refuses the
  * call (and rolls back the install) when the manifest did not declare it.
  *
- * All eight are enforced: `timeline-renderers`, `composer-actions`, `commands`,
- * `member-decorations`, `activity-renderers`, `settings-tabs`, `styles` and
- * `workspace-panes`.
+ * All nine are enforced: the eight in-page ones (the component permissions
+ * `timeline-renderers`, `member-decorations`, `activity-renderers`,
+ * `settings-tabs`, `workspace-panes` plus the data-in/capability-out
+ * `composer-actions`, `commands`, `styles`) and `native-activity` — the one
+ * non-component permission that still forces the trusted lane, because the
+ * native feed lives on the preload's bridge and a sandboxed worker cannot
+ * reach it (see `native-activity.ts`).
  *
  * This array is the single runtime source: the `Permission` union is derived
  * from it, the release schema's enum is built from it, and the installer
@@ -1309,7 +1441,8 @@ export declare const PLUGIN_PERMISSIONS: readonly [
 	"commands",
 	"settings-tabs",
 	"styles",
-	"workspace-panes"
+	"workspace-panes",
+	"native-activity"
 ];
 export type Permission = (typeof PLUGIN_PERMISSIONS)[number];
 /**
@@ -1367,6 +1500,53 @@ export interface PluginMedia {
 	resolveEncrypted(file: EncryptedAttachment): Promise<string>;
 }
 /**
+ * One native/RPC activity: what a desktop app pushes into Tumult. It mirrors a
+ * rich-presence activity document on the wire (no `source`/`assets`
+ * discriminator — producers coordinate client-side, the same way a manual
+ * `/activity` and a native one do), so the host stays producer-agnostic and a
+ * desktop-only capability can degrade to "nothing to show" on the web. Field
+ * caps are enforced by the producer before it reaches here.
+ */
+export interface NativeActivity {
+	/** What the app is doing — the rich-presence vocabulary. */
+	readonly type: "playing" | "listening" | "watching" | "custom";
+	/** The headline, e.g. "Visual Studio Code", "VLC", "Spotify". */
+	readonly name: string;
+	/** A second line of context, e.g. a file or track name. */
+	readonly details?: string;
+	/** A third line, e.g. a progress or current state. */
+	readonly state?: string;
+	/** Epoch milliseconds the activity started, when the caller knows it. */
+	readonly startedAt?: number;
+	/** A short emoji to show by the headline. */
+	readonly emoji?: string;
+}
+/**
+ * The native activity feed — the in-app view of what native apps (and, later,
+ * a passive detection source) are doing. A browser tab cannot observe the
+ * operating system, so on the web this is always empty: a consumer degrades to
+ * the plain status line. On desktop the shell bridges a native
+ * `window.tumultNative` (the one declared exception to the bridge-less shell)
+ * into a live feed; see `native-activity.ts`.
+ *
+ * The feed is shell-owned and shared across plugins: a plugin that consumes it
+ * subscribes through this method (which demands `native-activity`), and the
+ * returned disposable is run on uninstall — but it is NOT registry-tracked,
+ * because the feed outlives any single install.
+ */
+export interface NativeActivityFeed {
+	/** The current native activity, or null when nothing is active. */
+	readonly current: () => NativeActivity | null;
+	/**
+	 * Subscribe to changes. `callback` fires on every change — a new activity,
+	 * an update, or a clear (null) — and is delivered the current value at
+	 * subscription time, so a consumer that starts after an activity is already
+	 * set still sees it. Returns a disposable run on unsubscription or on feed
+	 * teardown.
+	 */
+	readonly subscribe: (callback: (activity: NativeActivity | null) => void) => Disposable$1;
+}
+/**
  * The registration surface every plugin gets — permission-checked and
  * disposable. New extension points append methods; existing plugins keep
  * working because it only grows.
@@ -1408,6 +1588,14 @@ export interface PluginApi {
 	 * throw instead of landing.
 	 */
 	injectStylesheet(css: string): Disposable$1;
+	/**
+	 * The native activity feed — what a desktop app is doing, pushed through
+	 * the preload's bridge (`window.tumultNative`). Demands `native-activity`;
+	 * on the web the feed is always empty. The returned feed is shell-owned,
+	 * so its subscribers are not tracked by the registry; a plugin tears its
+	 * own subscription down through the disposable `subscribe` returns.
+	 */
+	nativeActivity(): NativeActivityFeed;
 }
 /**
  * Everything one plugin can touch during `install()`.
@@ -1447,7 +1635,7 @@ interface Plugin$1 {
  * member, a changed permission meaning, a signature change. Additive and
  * invisible changes may keep it.
  */
-export declare const PLUGIN_API_VERSION = "1.2.0";
+export declare const PLUGIN_API_VERSION = "1.3.0";
 /**
  * Compare two dotted numeric versions ("1.2.3"). Each segment counts its
  * leading integer (`"2-beta"` → 2, missing segments → 0); non-numeric text
@@ -1457,10 +1645,15 @@ export declare function compareVersions(a: string, b: string): number;
 /** `"sandbox"`: loaded in a Worker, bridged. `"trusted"`: loaded in-page. */
 export type PluginLane = "sandbox" | "trusted";
 /**
- * The permissions the sandbox lane can serve. Everything else hands the host
- * a live component and therefore requires the trusted lane. Keep this list
- * in step with the extension APIs: an API that takes or returns plain data is
- * sandboxable; one that takes a `Component` is not.
+ * The permissions the sandbox lane can serve. Everything else requires the
+ * trusted lane: an API that hands the host a live Vue `Component` cannot be
+ * marshalled across a postMessage boundary, and `native-activity` cannot be
+ * reached from a worker at all — its bridge (`window.tumultNative`) is the
+ * preload's, an in-page-only surface. So this list lists the data-in/capability-
+ * out ones and nothing else; it is derived, never a manifest claim, and
+ * `native-activity` in particular is the one permission that is neither
+ * component-bearing nor workerable, and so joins the component permissions in
+ * forcing the trusted lane.
  */
 export declare const SANDBOXABLE_PERMISSIONS: readonly Permission[];
 /**

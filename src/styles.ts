@@ -69,4 +69,26 @@ export const STYLES = `
 .tumult-rp-toggle { display: flex; gap: var(--space-2); align-items: flex-start; font-size: var(--text-sm); }
 .tumult-rp-message { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); }
 .tumult-rp-error { margin: 0; color: var(--danger); font-size: var(--text-sm); }
+
+/* The informational native-activity block: a divider, a live-mirrored line (or
+   an empty-state note on the web where no feed exists). */
+.tumult-rp-native {
+    display: grid;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: var(--border-width) solid var(--border-default);
+}
+.tumult-rp-native-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--text-secondary);
+}
+.tumult-rp-native-active { display: grid; gap: var(--space-2); }
+.tumult-rp-native-note {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+}
 `;

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { ChatClient } from "@tumult/ui";
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { ACTIVITY_KEY, ACTIVITY_TYPES, type ActivityType, isActivity, LIMITS, makeActivity } from "../activity.ts";
+import { ACTIVITY_KEY, ACTIVITY_TYPES, type Activity, type ActivityType, isActivity, LIMITS, makeActivity } from "../activity.ts";
+import ActivityLine from "../components/ActivityLine.vue";
 import { controllerFor } from "../controller.ts";
+import { nativeConsumerFor, toActivityDocument } from "../native.ts";
 
 const props = defineProps<{ client: ChatClient; close(): void }>();
 const client = props.client;
@@ -18,6 +20,15 @@ const emoji = ref("");
 const busy = ref(false);
 const message = ref("");
 const error = ref("");
+
+// The live native/RPC activity, shared by install() and this tab. On the web the
+// feed is empty, so this stays null and the block shows its empty-state note.
+const native = nativeConsumerFor(client);
+const nativeDoc = computed<Activity | null>(() => {
+    const live = native.current.value;
+    return live ? toActivityDocument(live) : null;
+});
+const selfId = client.session.get()?.userId ?? "";
 
 let unsubscribe: (() => void) | null = null;
 
@@ -129,5 +140,18 @@ function clear(): Promise<void> {
 
         <p v-if="message" class="tumult-rp-message" role="status">{{ message }}</p>
         <p v-if="error" class="tumult-rp-error" role="alert">{{ error }}</p>
+
+        <section class="tumult-rp-native">
+            <h3 class="tumult-rp-native-title">Native / RPC activity</h3>
+            <div v-if="nativeDoc" class="tumult-rp-native-active">
+                <ActivityLine :user-id="selfId" :value="nativeDoc" variant="self" />
+                <p class="tumult-rp-native-note">Mirrored from a native app on your desktop.</p>
+            </div>
+            <p v-else class="tumult-rp-native-note">
+                On desktop, a running app — a game, a music player, an editor — can report what it
+                is doing, and it shows here just like your own activity above, wherever your profile
+                appears. A web tab cannot see an operating system, so this stays empty in the browser.
+            </p>
+        </section>
     </section>
 </template>

@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 test("tumult.plugin.json declares exactly the permissions the plugin uses", () => {
     const json = JSON.parse(readFileSync(new URL("../tumult.plugin.json", import.meta.url), "utf8"));
-    assert.deepEqual([...json.permissions].sort(), ["activity-renderers", "commands", "settings-tabs", "styles"]);
+    assert.deepEqual([...json.permissions].sort(), ["activity-renderers", "commands", "native-activity", "settings-tabs", "styles"]);
     assert.equal(json.id, "app.tumult.rich-presence");
     assert.equal(json.entry, "plugin.js");
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));

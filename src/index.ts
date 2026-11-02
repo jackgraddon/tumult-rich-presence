@@ -7,6 +7,13 @@
  * something. Consumer: an activity renderer replaces the status line in member
  * rows and the user bar for anyone whose profile carries a valid document.
  *
+ * On desktop a native app pushes its activity through the shell's native feed
+ * (the `native-activity` permission — the one declared exception to the
+ * bridge-less shell), and this mirrors it into the same profile field, so
+ * "what a person is doing" shows the same on desktop and web. On the web the
+ * feed is empty, so the native mirror degrades to nothing and only the manual
+ * producer runs.
+ *
  * Uses component permissions, so it runs in the trusted (in-page) lane.
  */
 import type { Plugin, PluginManifest } from "@tumult/ui";
@@ -15,17 +22,18 @@ import { ACTIVITY_KEY, isActivity, makeActivity, mirrorText, parseActivityArgs }
 import ActivityLine from "./components/ActivityLine.vue";
 import ActivitySettings from "./components/ActivitySettings.vue";
 import { controllerFor } from "./controller.ts";
+import { nativeConsumerFor } from "./native.ts";
 import { STYLES } from "./styles.ts";
 
 export const manifest: PluginManifest = {
     id: "app.tumult.rich-presence",
     name: "Rich Presence",
-    version: "0.1.1",
+    version: "0.2.0",
     author: "jackgraddon",
-    description: "Discord-style activities (Playing / Listening / Watching) on your profile, shown in member lists and the user bar.",
-    permissions: ["activity-renderers", "commands", "settings-tabs", "styles"],
-    minCore: "1.4.0",
-    minUI: "1.2.0",
+    description: "Discord-style activities (Playing / Listening / Watching) on your profile, shown in member lists and the user bar; on desktop, mirror what native apps are doing.",
+    permissions: ["activity-renderers", "commands", "settings-tabs", "styles", "native-activity"],
+    minCore: "1.5.0",
+    minUI: "1.3.0",
 };
 
 export const USAGE = "/activity [playing|listening|watching|custom] [emoji] <name> [| details]  ·  /activity clear";
@@ -70,6 +78,12 @@ export const plugin: Plugin = {
                 }
             },
         });
+
+        // Mirror native/RPC activity (desktop only; empty on the web) into the
+        // same field. Returned as teardown, so uninstalling stops it, and the
+        // shell's feed teardown un-subscribes it on the way out.
+        const feed = ctx.nativeActivity();
+        return nativeConsumerFor(ctx.client).start(feed);
     },
 };
 
